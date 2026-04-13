@@ -1,6 +1,6 @@
 import { Rectangle } from "pixi.js";
 import * as _ from "lodash";
-import { Cluster } from "../../../data-collection/cluster";
+import { Cluster } from "./utils";
 import { METADATA_DICT } from "./base_types";
 
 

@@ -1,7 +1,61 @@
-import { Cluster } from "../../../data-collection/cluster";
 import * as _ from "lodash";
 import { getTiers, params_dict } from "./base_utils";
 
+export type ClusterJSON = {
+    id: number,
+    tier: number,
+    nodes: number[],
+    clusters: ClusterJSON[],
+}
+
+export class Cluster {
+    id: number;
+    tier: number;
+    nodes: number[];
+    clusters: Cluster[];
+
+    constructor(id: number, tier: number, nodes: number[] = []) {
+        this.id = id;
+        this.tier = tier;
+        this.nodes = nodes;
+        this.clusters = [];
+    }
+
+    static fromJSON(json: ClusterJSON): Cluster {
+        const cluster = new Cluster(json.id, json.tier, json.nodes);
+        cluster.clusters = json.clusters.map(c => Cluster.fromJSON(c));
+        return cluster;
+    }
+
+    toNodeDict(): { [key: string]: number[] } {
+        let json: { [key: string]: number[] } = {};
+
+        // leaf nodes
+        for (let node of this.nodes) {
+            json[node] = [node];
+        }
+
+        // merge child dictionaries
+        for (let c of this.clusters) {
+            Object.assign(json, c.toNodeDict());
+        }
+
+        // find max depth
+        const max_len = Math.max(
+            0,
+            ...Object.values(json).map(arr => arr.length)
+        );
+
+        // pad paths with current cluster id
+        for (let [id, path] of Object.entries(json)) {
+            while (path.length <= max_len) {
+                path.unshift(this.id);
+            }
+        }
+
+        return json;
+    }
+}
 
 export function currentLanguage() {
     return params_dict.language || "en";
