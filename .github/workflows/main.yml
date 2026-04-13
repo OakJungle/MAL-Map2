@@ -1,0 +1,64 @@
+name: Build and GH-Page Deploy
+
+on:
+  push:
+    branches:
+      - python
+
+  workflow_dispatch:
+    inputs:
+      reset:
+        description: "Run full reset (rebuild metadata - slow)"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./svelte
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
+      - name: Install Python Dependencies
+        run: pip install -r requirements.txt
+        working-directory: ./data-collection
+
+      - name: Run data pipeline
+        env:
+          MAL_KEY: ${{ secrets.MAL_KEY }}
+        run: |
+          if [ "${{ github.event.inputs.reset }}" = "true" ]; then
+            echo "Running FULL RESET pipeline"
+            python3 main.py reset
+          else
+            echo "Running normal pipeline"
+            python3 main.py
+          fi
+        working-directory: ./data-collection
+
+      - name: Install frontend deps
+        run: npm ci
+        working-directory: ./svelte
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: ./svelte
+
+      - name: Deploy to GH Pages
+        uses: JamesIves/github-pages-deploy-action@4.1.1
+        with:
+          branch: gh-pages
+          folder: svelte/public
