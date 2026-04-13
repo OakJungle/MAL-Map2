@@ -65,7 +65,7 @@ async def get_ids():
 
     return list(set(ids))
 
-async def store_anilist_metadata(ids: List[int], filename='data/metadata-anilist.json'):
+def store_anilist_metadata(ids: List[int], filename='data/metadata-anilist.json'):
     metadata = load_json(filename)
 
     print(f"{len(metadata)} shows already have anilist metadata out of {len(ids)}")
@@ -130,7 +130,7 @@ async def store_anilist_metadata(ids: List[int], filename='data/metadata-anilist
     save_json(filename, metadata)
     return metadata
 
-async def store_metadata(ids: List[int], filename='data/metadata.json'):
+def store_metadata(ids: List[int], filename='data/metadata.json'):
     metadata = load_json(filename)
 
     print(f"{len(metadata)} shows already have metadata out of {len(ids)}")

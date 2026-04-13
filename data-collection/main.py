@@ -1,6 +1,6 @@
 import sys
 import json
-import os
+import asyncio
 
 from cluster import create_cluster
 from layout import Layout
@@ -27,8 +27,10 @@ async def main():
         with open(ANILIST_METADATA_FILENAME, 'w') as f:
             json.dump({}, f)
 
-        await store_metadata(ids)
-        await store_anilist_metadata(ids)
+        mal_task = asyncio.to_thread(store_metadata, ids)
+        ani_task = asyncio.to_thread(store_anilist_metadata, ids)
+
+        await asyncio.gather(mal_task, ani_task)
 
     # Load metadata
     with open(MAL_METADATA_FILENAME, 'r') as f:
@@ -58,5 +60,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
