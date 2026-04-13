@@ -1,0 +1,7 @@
+tqdm
+requests
+networkx
+numpy
+scipy
+
+cdlib
