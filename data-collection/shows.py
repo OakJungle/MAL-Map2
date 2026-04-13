@@ -12,44 +12,73 @@ KEY = os.environ.get("MAL_KEY", "e0e691a27a61d8cca4d3446774022c20")
 # GET IDS
 # -----------------------
 
+import json
+import os
+import time
+import requests
+from typing import Dict, List
+from tqdm import tqdm
+
+
+def load_json(filename):
+    if os.path.exists(filename):
+        with open(filename) as f:
+            return json.load(f)
+    return {}
+
+
+def save_json(filename, data):
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def request_with_retry(method, url, *, headers=None, json_data=None, retries=3):
+    for attempt in range(retries):
+        res = requests.request(method, url, headers=headers, json=json_data)
+
+        # ✅ Handle AniList rate limit (429)
+        if res.status_code == 429:
+            retry_after = int(res.headers.get("Retry-After", 60))
+            print(f"Rate limited. Waiting {retry_after}s...")
+            time.sleep(retry_after)
+            continue
+
+        if not res.ok:
+            print(f"HTTP {res.status_code}: retrying...")
+            time.sleep(attempt + 1)
+            continue
+
+        return res.json()
+
+    raise Exception("Request failed after retries")
+
 async def get_ids():
     print("Getting ids from MAL")
-    ids = []
 
+    ids = []
     for i in range(10):
         url = f"https://api.myanimelist.net/v2/anime/ranking?ranking_type=bypopularity&limit=500&offset={i * 500}"
-        res = requests.get(url, headers={"X-MAL-CLIENT-ID": KEY})
-        data = res.json()
+        data = request_with_retry("GET", url, headers={"X-MAL-CLIENT-ID": KEY})
 
-        for show in data.get("data", []):
-            ids.append(show["node"]["id"])
-
+        ids.extend(show["node"]["id"] for show in data.get("data", []))
         time.sleep(0.6)
 
     return list(set(ids))
 
-
-# -----------------------
-# ANILIST METADATA
-# -----------------------
-
 async def store_anilist_metadata(ids: List[int], filename='data/metadata-anilist.json'):
-    if os.path.exists(filename):
-        with open(filename) as f:
-            metadata = json.load(f)
-    else:
-        metadata = {}
+    metadata = load_json(filename)
 
     print(f"{len(metadata)} shows already have anilist metadata out of {len(ids)}")
 
     for id in tqdm(ids):
-        if str(id) in metadata:
+        key = str(id)
+        if key in metadata:
             continue
 
-        metadata[str(id)] = {}
+        metadata[key] = {}
+        page = 1
 
         try:
-            page = 1
             while True:
                 query = {
                     "query": """
@@ -67,108 +96,71 @@ async def store_anilist_metadata(ids: List[int], filename='data/metadata-anilist
                     "variables": {"id": id, "i": page}
                 }
 
-                res = requests.post("https://graphql.anilist.co", json=query)
-                data = res.json()
+                data = request_with_retry(
+                    "POST",
+                    "https://graphql.anilist.co",
+                    json_data=query
+                )
 
                 nodes = data["data"]["Media"]["recommendations"]["nodes"]
-                nodes = [n for n in nodes if n.get("mediaRecommendation", {}).get("idMal")]
+                nodes = [
+                    n for n in nodes
+                    if n and n.get("mediaRecommendation") and n["mediaRecommendation"].get("idMal")
+                ]
 
                 if not nodes:
                     break
 
                 for node in nodes:
-                    rec = node["mediaRecommendation"]["idMal"]
-                    rating = node["rating"]
-
-                    if rating < 1:
+                    if (node.get("rating") or 0) < 1:
                         continue
 
-                    metadata[str(id)][str(rec)] = metadata[str(id)].get(str(rec), 0) + rating
+                    rec = str(node["mediaRecommendation"]["idMal"])
+                    metadata[key][rec] = metadata[key].get(rec, 0) + node["rating"]
 
                 page += 1
-                time.sleep(0.8)
+                time.sleep(0.7)  # ~85 req/min (safe under 90)
 
         except Exception as e:
             print("Error:", id, e)
 
-        time.sleep(0.6)
+        if len(metadata) % 20 == 0:
+            save_json(filename, metadata)
 
-        if len(metadata) % 20 == 1:
-            with open(filename, "w") as f:
-                json.dump(metadata, f, indent=2)
-
-    with open(filename, "w") as f:
-        json.dump(metadata, f, indent=2)
-
+    save_json(filename, metadata)
     return metadata
 
-
-# -----------------------
-# MAL METADATA
-# -----------------------
-
 async def store_metadata(ids: List[int], filename='data/metadata.json'):
-    if os.path.exists(filename):
-        with open(filename) as f:
-            metadata = json.load(f)
-    else:
-        metadata = {}
+    metadata = load_json(filename)
 
     print(f"{len(metadata)} shows already have metadata out of {len(ids)}")
 
     for id in tqdm(ids):
-        if str(id) in metadata:
+        key = str(id)
+        if key in metadata:
             continue
 
         try:
             params = "title,alternative_titles,num_list_users,media_type,start_season,nsfw,synopsis,score,genres,rank,popularity,main_picture,related_anime,mean,recommendations"
             url = f"https://api.myanimelist.net/v2/anime/{id}?fields={params}"
 
-            json_data = fetch_with_retry(url, {"X-MAL-CLIENT-ID": KEY})
-            metadata[str(id)] = json_data
+            metadata[key] = request_with_retry(
+                "GET",
+                url,
+                headers={"X-MAL-CLIENT-ID": KEY}
+            )
 
         except Exception as e:
-            print("Failed ID:", id, e)
-            metadata[str(id)] = None
+            print("Failed:", id, e)
+            metadata[key] = None
 
         time.sleep(0.8)
 
-        if len(metadata) % 20 == 1:
-            with open(filename, "w") as f:
-                json.dump(metadata, f, indent=2)
+        if len(metadata) % 20 == 0:
+            save_json(filename, metadata)
 
-    with open(filename, "w") as f:
-        json.dump(metadata, f, indent=2)
-
+    save_json(filename, metadata)
     return metadata
-
-
-# -----------------------
-# FETCH WITH RETRY
-# -----------------------
-
-def fetch_with_retry(url, headers, retries=3):
-    for attempt in range(1, retries + 1):
-        try:
-            res = requests.get(url, headers=headers)
-            text = res.text
-
-            if not res.ok:
-                print("HTTP error:", res.status_code)
-                print(text[:300])
-                raise Exception("HTTP error")
-
-            return json.loads(text)
-
-        except Exception as e:
-            print(f"Attempt {attempt} failed")
-
-            if attempt == retries:
-                raise e
-
-            delay = attempt
-            print(f"Retrying in {delay}s...")
-            time.sleep(delay)
 
 
 # -----------------------
