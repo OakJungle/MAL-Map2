@@ -83,7 +83,7 @@ def store_anilist_metadata(ids: List[int], filename='data/metadata-anilist.json'
                 query = {
                     "query": """
                     query ($id: Int, $i: Int) {
-                        Media (id: $id, type: ANIME) {
+                        Media (idMal: $id, type: ANIME) {
                             recommendations(page: $i) {
                                 nodes {
                                     mediaRecommendation { idMal }
