@@ -146,7 +146,8 @@ function filterMetadata(metadata: ANIME_DICT): ANIME_DICT {
     let filtered = {};
     for (const id in metadata) {
         const show = metadata[id];
-        if (show.score && ['tv'].includes(show.type) && !show.nsfw) {
+        // {'unknown', 'tv', 'pv', 'tv_special', 'movie', 'special', 'ona', 'music', 'cm', 'ova'}
+        if (show.score && ['tv', 'tv_special', 'movie', 'special', 'ona', 'ova'].includes(show.type) && !show.nsfw) {
             filtered[id] = show;
         }
     }
